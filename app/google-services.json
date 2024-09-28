@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "910256420620",
+    "project_id": "ml-mini-project-6bf03",
+    "storage_bucket": "ml-mini-project-6bf03.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:910256420620:android:896589ddf09bf801a57b29",
+        "android_client_info": {
+          "package_name": "com.starkindustries.ml_mini_project"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDsDCqySB-JSmrgtItrYrL4c1j5Qqi0HZw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
