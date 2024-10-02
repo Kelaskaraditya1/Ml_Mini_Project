@@ -7,12 +7,12 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
 import android.provider.MediaStore
 import android.util.Log
 import android.view.Gravity
-import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
@@ -158,20 +158,40 @@ class EmotionDetectionActivity : AppCompatActivity() {
         val inputBuffer = processImageForInference(faceBitmap)
         val outputBuffer = Array(1) { FloatArray(7) } // Assuming 7 emotion classes
 
+        // Run inference
         tflite.run(inputBuffer, outputBuffer)
 
-        val maxIndex = outputBuffer[0].indices.maxByOrNull { outputBuffer[0][it] } ?: -1
+        // Log raw output for debugging
+        Log.d("EmotionDetection", "Raw model output: ${outputBuffer[0].joinToString()}")
+
+        // Apply softmax to outputBuffer to get probabilities
+        val probabilities = softmax(outputBuffer[0])
+
+        // Log probabilities for debugging
+        Log.d("EmotionDetection", "Probabilities: ${probabilities.joinToString()}")
+
+        val maxIndex = probabilities.indices.maxByOrNull { probabilities[it] } ?: -1
+
+        Log.d("EmotionDetection", "Predicted emotion index: $maxIndex")
         return getEmotion(maxIndex)
+    }
+
+    // Softmax function to normalize logits
+    private fun softmax(logits: FloatArray): FloatArray {
+        val maxLogit = logits.maxOrNull() ?: 0f
+        val exps = logits.map { Math.exp((it - maxLogit).toDouble()).toFloat() }
+        val sumExps = exps.sum()
+        return exps.map { it / sumExps }.toFloatArray()
     }
 
     // Get emotion label based on index
     private fun getEmotion(index: Int): String {
         return when (index) {
-            0 -> "Anger"
+            0 -> "Angry"
             1 -> "Disgust"
             2 -> "Fear"
-            3 -> "Happiness"
-            4 -> "Sadness"
+            3 -> "Happy"
+            4 -> "Sad"
             5 -> "Surprise"
             6 -> "Neutral"
             else -> "Unknown"
@@ -182,21 +202,18 @@ class EmotionDetectionActivity : AppCompatActivity() {
     private fun displayFaceEmotionMap(faceEmotionMap: Map<Int, String>) {
         // Check if the map is empty
         if (faceEmotionMap.isEmpty()) {
-            binding.report.text = "Please enter an image with faces"
+            binding.report.text = "Please select an image with minimum 1 face in it."
+            binding.report.setTypeface(null, Typeface.BOLD)
             binding.report.gravity = Gravity.CENTER // Center horizontally
         } else {
+            binding.report.setTypeface(null, Typeface.BOLD)
             // Create a string representation of the face emotions
             val mapText = faceEmotionMap.entries.joinToString(separator = "\n") { (faceNo, emotion) ->
                 "Face $faceNo: $emotion"
             }
             binding.report.text = mapText // Update the TextView with the map content
         }
-
-        // Center the text within the TextView
-
     }
-
-
 
     // Draw contours and labels on the bitmap
     private fun drawFaceContoursAndLabels(bitmap: Bitmap, faces: List<Face>): Bitmap {
@@ -227,25 +244,27 @@ class EmotionDetectionActivity : AppCompatActivity() {
     // Process image for inference (resize and normalize)
     private fun processImageForInference(image: Bitmap): ByteBuffer {
         val resizedImage = Bitmap.createScaledBitmap(image, IMAGE_SIZE, IMAGE_SIZE, true)
-        val inputBuffer = ByteBuffer.allocateDirect(IMAGE_SIZE * IMAGE_SIZE * 3 * 4) // 4 bytes per float
+        val inputBuffer = ByteBuffer.allocateDirect(4 * IMAGE_SIZE * IMAGE_SIZE * 3)
         inputBuffer.order(ByteOrder.nativeOrder())
 
-        for (y in 0 until IMAGE_SIZE) {
-            for (x in 0 until IMAGE_SIZE) {
-                val pixel = resizedImage.getPixel(x, y)
-                // Normalize the RGB values to [0, 1] range and put into ByteBuffer as float
-                inputBuffer.putFloat(((pixel shr 16) and 0xFF) / 255.0f) // Red
-                inputBuffer.putFloat(((pixel shr 8) and 0xFF) / 255.0f)  // Green
-                inputBuffer.putFloat((pixel and 0xFF) / 255.0f)          // Blue
-            }
+        val intValues = IntArray(IMAGE_SIZE * IMAGE_SIZE)
+        resizedImage.getPixels(intValues, 0, resizedImage.width, 0, 0, resizedImage.width, resizedImage.height)
+
+        for (pixel in intValues) {
+            val r = (pixel shr 16 and 0xFF) / 255.0f
+            val g = (pixel shr 8 and 0xFF) / 255.0f
+            val b = (pixel and 0xFF) / 255.0f
+
+            inputBuffer.putFloat(r)
+            inputBuffer.putFloat(g)
+            inputBuffer.putFloat(b)
         }
 
         return inputBuffer
     }
 
+    // Show a toast message
     private fun showToast(message: String) {
-        runOnUiThread {
-            Toast.makeText(this, message, Toast.LENGTH_LONG).show()
-        }
+        Toast.makeText(applicationContext, message, Toast.LENGTH_SHORT).show()
     }
 }
