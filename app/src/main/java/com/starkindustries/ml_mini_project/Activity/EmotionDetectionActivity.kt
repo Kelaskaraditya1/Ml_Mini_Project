@@ -1,60 +1,66 @@
 package com.starkindustries.ml_mini_project.Activity
+
 import android.content.ContentResolver
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
 import android.net.Uri
 import android.os.Bundle
 import android.provider.MediaStore
-import android.util.Base64
 import android.util.Log
+import android.view.Gravity
+import android.widget.LinearLayout
 import android.widget.Toast
-import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.databinding.DataBindingUtil
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.face.Face
+import com.google.mlkit.vision.face.FaceDetection
+import com.google.mlkit.vision.face.FaceDetectorOptions
 import com.starkindustries.ml_mini_project.Keys.Keys
 import com.starkindustries.ml_mini_project.R
 import com.starkindustries.ml_mini_project.databinding.ActivityEmotionDetectionBinding
-import java.io.ByteArrayOutputStream
-import java.io.InputStream
-import okhttp3.*
-import okhttp3.MediaType.Companion.toMediaTypeOrNull
-import java.io.IOException
 import org.tensorflow.lite.Interpreter
 import java.io.FileInputStream
+import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.nio.FloatBuffer
 import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
 
 class EmotionDetectionActivity : AppCompatActivity() {
-    lateinit var binding:ActivityEmotionDetectionBinding
-    val client = OkHttpClient()
+    lateinit var binding: ActivityEmotionDetectionBinding
     private lateinit var tflite: Interpreter
-    private val IMAGE_SIZE = 22
+    private val IMAGE_SIZE = 224
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
         setContentView(R.layout.activity_emotion_detection)
-        binding=DataBindingUtil.setContentView(this,R.layout.activity_emotion_detection)
+        binding = DataBindingUtil.setContentView(this, R.layout.activity_emotion_detection)
+
         try {
             val tfliteModel = loadModelFile("model.tflite")
             tflite = Interpreter(tfliteModel)
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        binding.GalleryButton.setOnClickListener(){
+
+        binding.GalleryButton.setOnClickListener {
             val intent = Intent(Intent.ACTION_PICK)
             intent.setData(MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
-            startActivityForResult(intent,Keys.GALLERY_CODE)
+            startActivityForResult(intent, Keys.GALLERY_CODE)
         }
-        binding.realTimeButton.setOnClickListener(){
-            val cameraIntet=Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-            startActivityForResult(cameraIntet,Keys.CAMERA_CODE)
+
+        binding.realTimeButton.setOnClickListener {
+            val cameraIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+            startActivityForResult(cameraIntent, Keys.CAMERA_CODE)
         }
+
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
@@ -64,49 +70,26 @@ class EmotionDetectionActivity : AppCompatActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if(resultCode== RESULT_OK){
-            if(requestCode==Keys.GALLERY_CODE){
-                var uriImage: Uri? = data?.getData()
-                var bitmapImage = getBitmapFromUri(uriImage, contentResolver)
+        if (resultCode == RESULT_OK) {
+            if (requestCode == Keys.GALLERY_CODE) {
+                val uriImage: Uri? = data?.data
+                val bitmapImage = getBitmapFromUri(uriImage, contentResolver)
                 if (bitmapImage != null) {
-                    runInference(bitmapImage)
+                    detectFacesAndEmotions(bitmapImage)
                 }
-                val processedImage = bitmapImage?.let { processImage(it) }
-                binding.Image.setImageBitmap(bitmapImage)
             }
-            if(requestCode==Keys.CAMERA_CODE){
-                var bitmapImage:Bitmap=data?.extras?.get("data") as Bitmap
-                binding.Image.setImageBitmap(bitmapImage)
+            if (requestCode == Keys.CAMERA_CODE) {
+                val bitmapImage = data?.extras?.get("data") as Bitmap
+                detectFacesAndEmotions(bitmapImage)
             }
         }
     }
+
     fun getBitmapFromUri(uri: Uri?, contentResolver: ContentResolver): Bitmap? {
         val inputStream: InputStream? = uri?.let { contentResolver.openInputStream(it) }
         return BitmapFactory.decodeStream(inputStream)
     }
 
-
-
-    //    fun processImage(image: Bitmap): Array<Array<Array<FloatArray>>> {
-//        // Resize the image to 224x224
-//        val resizedImage = Bitmap.createScaledBitmap(image, 224, 224, true)
-//
-//        // Create a float array to hold the image data
-//        val input = Array(1) { Array(224) { Array(224) { FloatArray(3) } } }
-//
-//        // Normalize the pixel values (between 0 and 1)
-//        for (x in 0 until 224) {
-//            for (y in 0 until 224) {
-//                val pixel = resizedImage.getPixel(x, y)
-//                // Extract RGB values
-//                input[0][x][y][0] = ((pixel shr 16) and 0xFF) / 255.0f  // Red
-//                input[0][x][y][1] = ((pixel shr 8) and 0xFF) / 255.0f   // Green
-//                input[0][x][y][2] = (pixel and 0xFF) / 255.0f           // Blue
-//            }
-//        }
-//
-//        return input  // The processed image is ready for the TFLite model
-//    }
     private fun loadModelFile(modelFileName: String): MappedByteBuffer {
         val fileDescriptor = assets.openFd(modelFileName)
         val inputStream = FileInputStream(fileDescriptor.fileDescriptor)
@@ -115,55 +98,73 @@ class EmotionDetectionActivity : AppCompatActivity() {
         val declaredLength = fileDescriptor.declaredLength
         return fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
     }
-    private fun processImage(image: Bitmap): FloatBuffer {
-        // Resize the image to 224x224
-        val resizedImage = Bitmap.createScaledBitmap(image, 224, 224, true)
 
-        // Allocate a buffer for the input tensor
-        val inputBuffer = ByteBuffer.allocateDirect(224 * 224 * 3 * 4) // 4 bytes per float
-        inputBuffer.order(ByteOrder.nativeOrder())
-        val floatBuffer = inputBuffer.asFloatBuffer()
+    // Detect faces and run emotion detection
+    private fun detectFacesAndEmotions(bitmap: Bitmap) {
+        val image = InputImage.fromBitmap(bitmap, 0)
 
-        // Fill the buffer with normalized pixel values
-        for (y in 0 until 224) {
-            for (x in 0 until 224) {
-                val pixel = resizedImage.getPixel(x, y)
-                floatBuffer.put(((pixel shr 16) and 0xFF) / 255.0f)  // Normalize Red
-                floatBuffer.put(((pixel shr 8) and 0xFF) / 255.0f)   // Normalize Green
-                floatBuffer.put((pixel and 0xFF) / 255.0f)           // Normalize Blue
+        val options = FaceDetectorOptions.Builder()
+            .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
+            .build()
+
+        val detector = FaceDetection.getClient(options)
+        detector.process(image)
+            .addOnSuccessListener { faces ->
+                val faceEmotionMap = mutableMapOf<Int, String>()
+                var faceCount = 1
+
+                for (face in faces) {
+                    // Crop each face from the original bitmap
+                    val faceBitmap = cropFaceFromBitmap(bitmap, face)
+
+                    // Run emotion detection on the cropped face
+                    val emotion = runEmotionInference(faceBitmap)
+
+                    // Store face number and emotion in the map
+                    faceEmotionMap[faceCount] = emotion
+
+                    // Increment face count
+                    faceCount++
+                }
+
+                // Draw contours and labels on the bitmap
+                val bitmapWithFaces = drawFaceContoursAndLabels(bitmap, faces)
+
+                // Set the modified bitmap (with contours) on the original ImageView
+                binding.Image.setImageBitmap(bitmapWithFaces)
+
+                // Display the face-emotion map on a TextView
+                displayFaceEmotionMap(faceEmotionMap)
+
+                showToast("Number of faces detected: ${faces.size}")
             }
-        }
-
-        // Return the buffer for inference
-        return floatBuffer
-    }
-    private fun handleResults(output: Array<FloatArray>) {
-        // Example: show the result as a Toast
-        val result = output[0].maxOrNull() // This depends on the model output structure
-        Toast.makeText(this, "Inference Result: $result", Toast.LENGTH_LONG).show()
+            .addOnFailureListener { e ->
+                Log.e("FaceDetection", "Face detection failed", e)
+            }
     }
 
-    private fun runInference(image: Bitmap) {
-        val inputBuffer = processImageForInference(image)
+    // Function to crop face region from the original bitmap
+    private fun cropFaceFromBitmap(bitmap: Bitmap, face: Face): Bitmap {
+        val left = face.boundingBox.left
+        val top = face.boundingBox.top
+        val width = face.boundingBox.width()
+        val height = face.boundingBox.height()
 
-        // Create output buffer based on the model's output shape
-        val outputBuffer = Array(1) { FloatArray(7) } // Assuming 7 classes
+        return Bitmap.createBitmap(bitmap, left, top, width, height)
+    }
 
-        // Run inference
+    // Run emotion detection for each face
+    private fun runEmotionInference(faceBitmap: Bitmap): String {
+        val inputBuffer = processImageForInference(faceBitmap)
+        val outputBuffer = Array(1) { FloatArray(7) } // Assuming 7 emotion classes
+
         tflite.run(inputBuffer, outputBuffer)
 
-        // Process predictions
-        val predictions = outputBuffer[0] // This will have 7 elements
-
-        // Find the class with the highest confidence
-        val maxIndex = predictions.indices.maxByOrNull { predictions[it] } ?: -1
-        val maxConfidence = predictions[maxIndex]
-
-        // Show toast with the predicted class and its confidence
-        val emotion = getEmotion(maxIndex)
-        showToast("Predicted Emotion: $emotion with confidence: $maxConfidence")
+        val maxIndex = outputBuffer[0].indices.maxByOrNull { outputBuffer[0][it] } ?: -1
+        return getEmotion(maxIndex)
     }
 
+    // Get emotion label based on index
     private fun getEmotion(index: Int): String {
         return when (index) {
             0 -> "Anger"
@@ -173,8 +174,73 @@ class EmotionDetectionActivity : AppCompatActivity() {
             4 -> "Sadness"
             5 -> "Surprise"
             6 -> "Neutral"
-            else -> "Unknown Emotion"
+            else -> "Unknown"
         }
+    }
+
+    // Display face number and emotion on a TextView
+    private fun displayFaceEmotionMap(faceEmotionMap: Map<Int, String>) {
+        // Check if the map is empty
+        if (faceEmotionMap.isEmpty()) {
+            binding.report.text = "Please enter an image with faces"
+            binding.report.gravity = Gravity.CENTER // Center horizontally
+        } else {
+            // Create a string representation of the face emotions
+            val mapText = faceEmotionMap.entries.joinToString(separator = "\n") { (faceNo, emotion) ->
+                "Face $faceNo: $emotion"
+            }
+            binding.report.text = mapText // Update the TextView with the map content
+        }
+
+        // Center the text within the TextView
+
+    }
+
+
+
+    // Draw contours and labels on the bitmap
+    private fun drawFaceContoursAndLabels(bitmap: Bitmap, faces: List<Face>): Bitmap {
+        val mutableBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true)
+        val canvas = Canvas(mutableBitmap)
+        val paint = Paint().apply {
+            style = Paint.Style.STROKE
+            color = Color.RED
+            strokeWidth = 4f
+        }
+
+        val textPaint = Paint().apply {
+            color = Color.WHITE
+            textSize = 50f
+            style = Paint.Style.FILL
+        }
+
+        var faceNumber = 1
+        for (face in faces) {
+            val bounds = face.boundingBox
+            canvas.drawRect(bounds, paint)
+            canvas.drawText("Face $faceNumber", bounds.left.toFloat(), bounds.top.toFloat() - 10, textPaint)
+            faceNumber++
+        }
+        return mutableBitmap
+    }
+
+    // Process image for inference (resize and normalize)
+    private fun processImageForInference(image: Bitmap): ByteBuffer {
+        val resizedImage = Bitmap.createScaledBitmap(image, IMAGE_SIZE, IMAGE_SIZE, true)
+        val inputBuffer = ByteBuffer.allocateDirect(IMAGE_SIZE * IMAGE_SIZE * 3 * 4) // 4 bytes per float
+        inputBuffer.order(ByteOrder.nativeOrder())
+
+        for (y in 0 until IMAGE_SIZE) {
+            for (x in 0 until IMAGE_SIZE) {
+                val pixel = resizedImage.getPixel(x, y)
+                // Normalize the RGB values to [0, 1] range and put into ByteBuffer as float
+                inputBuffer.putFloat(((pixel shr 16) and 0xFF) / 255.0f) // Red
+                inputBuffer.putFloat(((pixel shr 8) and 0xFF) / 255.0f)  // Green
+                inputBuffer.putFloat((pixel and 0xFF) / 255.0f)          // Blue
+            }
+        }
+
+        return inputBuffer
     }
 
     private fun showToast(message: String) {
@@ -182,67 +248,4 @@ class EmotionDetectionActivity : AppCompatActivity() {
             Toast.makeText(this, message, Toast.LENGTH_LONG).show()
         }
     }
-    private fun processImageForInference(image: Bitmap): Array<Array<Array<FloatArray>>> {
-        // Resize image to model input size (224x224) and convert to FloatArray
-        val resizedImage = Bitmap.createScaledBitmap(image, 224, 224, true)
-        val inputArray = Array(1) { Array(224) { Array(224) { FloatArray(3) } } }
-
-        for (x in 0 until 224) {
-            for (y in 0 until 224) {
-                val pixel = resizedImage.getPixel(x, y)
-                inputArray[0][x][y][0] = ((pixel shr 16 and 0xFF) / 255.0f) // Red
-                inputArray[0][x][y][1] = ((pixel shr 8 and 0xFF) / 255.0f)  // Green
-                inputArray[0][x][y][2] = ((pixel and 0xFF) / 255.0f)         // Blue
-            }
-        }
-        return inputArray
-    }
-
-    // Function to convert Bitmap to Base64
-//    fun bitmapToBase64(bitmap: Bitmap?): String {
-//        val byteArrayOutputStream = ByteArrayOutputStream()
-//        if (bitmap != null) {
-//            bitmap.compress(Bitmap.CompressFormat.PNG, 100, byteArrayOutputStream)
-//        }
-//        val byteArray = byteArrayOutputStream.toByteArray()
-//        return Base64.encodeToString(byteArray, Base64.NO_WRAP)
-//    }
-//    fun detectEmotion(bitmap: Bitmap?) {
-//        val base64Image = bitmapToBase64(bitmap)
-//
-//        // Define the API endpoint and request body
-//        val url = "https://api.gemini-ai.com/emotion-detection" // Use actual API endpoint
-//        val requestBody = RequestBody.create(
-//            "application/json; charset=utf-8".toMediaTypeOrNull(),
-//            """
-//        {
-//            "image": "$base64Image"
-//        }
-//        """.trimIndent()
-//        )
-//
-//        // Create request
-//        val request = Request.Builder()
-//            .url(url)
-//            .post(requestBody)
-//            .addHeader("Authorization", Keys.API_KEY) // Replace with actual API key
-//            .build()
-//
-//        // Make the request asynchronously
-//        client.newCall(request).enqueue(object : Callback {
-//            override fun onFailure(call: Call, e: IOException) {
-//                e.printStackTrace()
-//            }
-//
-//            override fun onResponse(call: Call, response: Response) {
-//                if (response.isSuccessful) {
-//                    val responseData = response.body?.string()
-//                    // Parse and handle the response data
-//                    Log.d("ValueListner",binding.report.toString())
-//                } else {
-//                    Log.d("errorListner",response.message)
-//                }
-//            }
-//        })
-//    }
 }

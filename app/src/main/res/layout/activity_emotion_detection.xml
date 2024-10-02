@@ -62,14 +62,26 @@
                     android:textSize="20sp">
                 </androidx.appcompat.widget.AppCompatButton>
             </androidx.appcompat.widget.LinearLayoutCompat>
-            <androidx.appcompat.widget.AppCompatTextView
-                android:id="@+id/report"
+            <ScrollView
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
-                android:layout_weight="4"
-                android:padding="10dp"
+                android:layout_weight="5"
                 android:layout_margin="10dp">
-            </androidx.appcompat.widget.AppCompatTextView>
+                <androidx.appcompat.widget.AppCompatTextView
+                    android:id="@+id/report"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:padding="10dp"
+                    android:text="No Face detected yet."
+                    android:gravity="center"
+                    android:textColor="@color/black"
+                    android:textStyle="bold"
+                    android:textAlignment="center"
+                    android:textAppearance="@color/black"
+                    android:textSize="25sp"
+                    android:layout_marginTop="10dp">
+                </androidx.appcompat.widget.AppCompatTextView>
+            </ScrollView>
         </androidx.appcompat.widget.LinearLayoutCompat>
     </androidx.appcompat.widget.LinearLayoutCompat>
 </layout>
